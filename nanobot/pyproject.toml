@@ -1,0 +1,11 @@
+[project]
+name = "nanobot"
+version = "0.1.0"
+description = "Nanobot AI agent for LMS"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "nanobot-ai>=0.1.4.post5",
+]
+
+[tool.uv.sources]

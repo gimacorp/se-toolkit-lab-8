@@ -180,9 +180,135 @@ _register(
 )
 _register(
     "lms_sync_pipeline",
-    "Trigger the LMS sync pipeline. May take a moment.",
+    "Trigger the GMS sync pipeline. May take a moment.",
     _NoArgs,
     _sync_pipeline,
+)
+
+# ---------------------------------------------------------------------------
+# Observability tools — VictoriaLogs
+# ---------------------------------------------------------------------------
+
+
+class _LogsSearchQuery(BaseModel):
+    query: str = Field(description="LogsQL query string, e.g. 'error' or '_stream:{service=\"backend\"} AND level:error'.")
+    limit: int = Field(default=10, ge=1, le=100, description="Max log entries to return (default 10).")
+
+
+class _LogsErrorCountQuery(BaseModel):
+    service: str = Field(default="backend", description="Service name to count errors for (default 'backend').")
+    minutes: int = Field(default=60, ge=1, le=1440, description="Time window in minutes (default 60).")
+
+
+async def _logs_search(args: _LogsSearchQuery) -> list[TextContent]:
+    """Search logs in VictoriaLogs using LogsQL."""
+    base_url = os.environ.get("VICTORIALOGS_URL", "http://localhost:42010")
+    import httpx
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{base_url}/select/logsql/query",
+            params={"query": args.query, "limit": args.limit},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        return [TextContent(type="text", text=resp.text)]
+
+
+async def _logs_error_count(args: _LogsErrorCountQuery) -> list[TextContent]:
+    """Count error logs per service in VictoriaLogs over a time window."""
+    base_url = os.environ.get("VICTORIALOGS_URL", "http://localhost:42010")
+    import httpx
+    query = f'_stream:{{service="{args.service}"}} AND (level:error OR error OR ERROR)'
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{base_url}/select/logsql/query",
+            params={"query": query, "limit": 100},
+            timeout=30.0,
+        )
+        resp.raise_for_status()
+        data = resp.text
+        # Count lines as error count
+        lines = [l for l in data.splitlines() if l.strip()]
+        return [TextContent(type="text", text=f"Found {len(lines)} error entries for service '{args.service}'")]
+
+
+_register(
+    "logs_search",
+    "Search logs in VictoriaLogs using LogsQL. Use for debugging errors or finding specific events.",
+    _LogsSearchQuery,
+    _logs_search,
+)
+_register(
+    "logs_error_count",
+    "Count error logs for a service over a time window. Use to check if there are errors.",
+    _LogsErrorCountQuery,
+    _logs_error_count,
+)
+
+# ---------------------------------------------------------------------------
+# Observability tools — VictoriaTraces
+# ---------------------------------------------------------------------------
+
+
+class _TracesListQuery(BaseModel):
+    service: str = Field(default="backend", description="Service name to list traces for (default 'backend').")
+    limit: int = Field(default=10, ge=1, le=100, description="Max traces to return (default 10).")
+
+
+class _TracesGetQuery(BaseModel):
+    trace_id: str = Field(description="Trace ID to fetch details for.")
+
+
+async def _traces_list(args: _TracesListQuery) -> list[TextContent]:
+    """List recent traces for a service from VictoriaTraces."""
+    base_url = os.environ.get("VICTORIATRACES_URL", "http://localhost:42011")
+    import httpx
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{base_url}/jaeger/api/traces",
+            params={"service": args.service, "limit": args.limit},
+            timeout=30.0,
+        )
+        if resp.status_code == 404:
+            return [TextContent(type="text", text="No traces found")]
+        resp.raise_for_status()
+        data = resp.json()
+        if not data.get("data"):
+            return [TextContent(type="text", text="No traces found")]
+        traces = data["data"][:5]
+        summary = []
+        for t in traces:
+            summary.append(f"Trace: {t.get('traceID', 'unknown')} - {len(t.get('spans', []))} spans")
+        return [TextContent(type="text", text="\n".join(summary))]
+
+
+async def _traces_get(args: _TracesGetQuery) -> list[TextContent]:
+    """Fetch a specific trace by ID from VictoriaTraces."""
+    base_url = os.environ.get("VICTORIATRACES_URL", "http://localhost:42011")
+    import httpx
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            f"{base_url}/jaeger/api/traces/{args.trace_id}",
+            timeout=30.0,
+        )
+        if resp.status_code == 404:
+            return [TextContent(type="text", text=f"Trace {args.trace_id} not found")]
+        resp.raise_for_status()
+        data = resp.json()
+        return [TextContent(type="text", text=json.dumps(data, indent=2))]
+
+
+_register(
+    "traces_list",
+    "List recent traces for a service from VictoriaTraces. Use to see request flow across services.",
+    _TracesListQuery,
+    _traces_list,
+)
+_register(
+    "traces_get",
+    "Fetch a specific trace by ID. Use to debug a specific request.",
+    _TracesGetQuery,
+    _traces_get,
 )
 
 
