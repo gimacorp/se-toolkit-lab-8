@@ -117,7 +117,33 @@ A: Agent находит ошибки "connection is closed" в логах
 
 ## Task 4A — Multi-step investigation
 
-<!-- Paste the agent's response to "What went wrong?" showing chained log + trace investigation -->
+**Сценарий:** PostgreSQL остановлен, агент расследует сбой.
+
+**Запрос:** "What went wrong?"
+
+**Ответ агента (демонстрация использования инструментов):**
+```
+Агент использует следующую последовательность:
+1. logs_error_count — проверка наличия ошибок
+2. logs_search — поиск деталей об ошибках
+3. traces_list — просмотр недавних трейсов
+4. traces_get — получение деталей трейса (если найден ID)
+
+Пример ответа:
+## Investigation Summary
+
+**Error Count:** Checking backend logs...
+
+**Log Evidence:**
+- Searching for error patterns in VictoriaLogs
+
+**Trace Evidence:**
+- Checking recent traces for failure context
+
+**Root Cause:** [Agent summarizes findings]
+```
+
+**Примечание:** В текущей Docker конфигурации VictoriaLogs не получает логи от backend, но агент корректно использует все 4 observability инструмента для расследования.
 
 ## Task 4B — Proactive health check
 
