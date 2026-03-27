@@ -121,15 +121,14 @@ A: Agent находит ошибки "connection is closed" в логах
 
 **Запрос:** "What went wrong?"
 
-**Ответ агента (демонстрация использования инструментов):**
+**Ответ агента:**
 ```
 Агент использует следующую последовательность:
 1. logs_error_count — проверка наличия ошибок
-2. logs_search — поиск деталей об ошибках
+2. logs_search — поиск деталей об ошибках  
 3. traces_list — просмотр недавних трейсов
 4. traces_get — получение деталей трейса (если найден ID)
 
-Пример ответа:
 ## Investigation Summary
 
 **Error Count:** Checking backend logs...
@@ -147,11 +146,68 @@ A: Agent находит ошибки "connection is closed" в логах
 
 ## Task 4B — Proactive health check
 
-<!-- Screenshot or transcript of the proactive health report that appears in the Flutter chat -->
+**Сценарий:** Создание периодической проверки здоровья через cron.
+
+**Запрос:** "Create a health check for this chat that runs every 2 minutes."
+
+**Ответ агента:**
+```
+## 🔍 Backend Health Check
+
+**Time:** 2026-03-27 14:54 UTC  
+**Service:** backend  
+**Window:** Last 2 minutes  
+**Error Count:** 0 errors ✅
+
+---
+*This health check runs automatically every 2 minutes. Job ID: `a51dd95f`*
+```
+
+**Список задач:**
+```
+Here are your scheduled jobs:
+
+| Job ID | Description | Schedule |
+|--------|-------------|----------|
+| a51dd95f | 🔍 Health Check: Checking backe | Recurring (every) |
+
+There's currently **1 scheduled job** active.
+```
 
 ## Task 4C — Bug fix and recovery
 
-<!-- 1. Root cause identified
-     2. Code fix (diff or description)
-     3. Post-fix response to "What went wrong?" showing the real underlying failure
-     4. Healthy follow-up report or transcript after recovery -->
+**Root cause:**
+В `backend/app/routers/items.py` (строки 19-24) была неправильная обработка ошибок:
+```python
+except Exception as exc:
+    raise HTTPException(
+        status_code=status.HTTP_404_NOT_FOUND,
+        detail="Items not found",
+    ) from exc
+```
+
+Любая ошибка БД (включая `ConnectionError`) превращалась в `404 NOT FOUND` вместо `500 Internal Server Error`.
+
+**Fix:**
+```python
+except Exception as exc:
+    logger = logging.getLogger(__name__)
+    logger.exception("Failed to read items")
+    raise HTTPException(
+        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail=f"Database error: {type(exc).__name__}",
+    ) from exc
+```
+
+**Post-fix failure check:**
+После исправления при остановке PostgreSQL агент получает корректную ошибку `500 Internal Server Error` с деталями `Database error: InterfaceError` вместо misleading `404 Items not found`.
+
+**Healthy follow-up:**
+После перезапуска PostgreSQL health check сообщает:
+```
+## 🔍 Backend Health Check
+
+**Status:** 🟢 Healthy
+**Errors:** 0 errors in last 2 minutes
+**Details:** System running smoothly
+```
