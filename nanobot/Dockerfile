@@ -23,11 +23,13 @@ COPY mcp/ /app/mcp/
 # Copy nanobot-websocket-channel for webchat channel
 COPY nanobot-websocket-channel/ /app/nanobot-websocket-channel/
 
-# Sync dependencies and install editable packages
+# Create venv and install dependencies using uv
 RUN --mount=type=cache,target=/root/.cache/uv \
-    cd /app/nanobot && uv sync && \
-    cd /app/nanobot && uv pip install -e /app/mcp && \
-    cd /app/nanobot && uv pip install -e /app/nanobot-websocket-channel
+    cd /app/nanobot && \
+    uv venv && \
+    uv pip install --python .venv/bin/python nanobot-ai && \
+    uv pip install --python .venv/bin/python -e /app/mcp && \
+    uv pip install --python .venv/bin/python -e /app/nanobot-websocket-channel
 
 # ---
 # Stage 2: Final runtime image
